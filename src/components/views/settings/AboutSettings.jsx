@@ -211,40 +211,51 @@ export default function AboutSettings({
             >
               <li>
                 <span className={`font-semibold ${textTitle}`}>
-                  Rebranded to WordDesk
+                  Sequential Verse &amp; Hymn Progression
                 </span>
-                . Refreshed application identity with complete continuity for all
-                installed Bibles, hymnals, saved service playlists, and settings.
+                . Presenting scripture or hymns from your service plan now seamlessly prepares and advances to the next verse (e.g. Matthew 3:16 → 17 → 18) or hymn stanza.
               </li>
               <li>
                 <span className={`font-semibold ${textTitle}`}>
-                  Continuous Font Size Scaling
+                  Seamless Auto-Updates &amp; Legacy Migration
                 </span>
-                . Fixed breakpoints are replaced with a smooth, free-sliding scale
-                between Small (75%) and XX-Large (200%), showing live percentage
-                feedback as you drag.
+                . Updates install silently and reliably without modal interruptions, and legacy shortcuts and data from previous versions migrate automatically.
               </li>
               <li>
                 <span className={`font-semibold ${textTitle}`}>
-                  Unified Scripture &amp; Hymn Text Size
+                  Draggable Service Plan Order
                 </span>
-                . The projector text scale in the control rail and settings now
-                seamlessly controls both scripture verses and hymn lyrics.
+                . Rearrange service schedule items seamlessly with drag-and-drop handles and responsive visual drop targets.
               </li>
               <li>
                 <span className={`font-semibold ${textTitle}`}>
-                  Live Preview &amp; Stepping Shortcuts
+                  YouTube &amp; Online Media Slides
                 </span>
-                . Real-time preview in Presentation Settings reflects your text
-                scaling instantly, and Ctrl+[ / Ctrl+] step sizes smoothly with
-                on-screen notifications.
+                . Paste any YouTube video link or web image directly into your service plan to stream videos and display photos on air with thumbnail previews.
               </li>
               <li>
                 <span className={`font-semibold ${textTitle}`}>
-                  100% Offline Resilience
+                  Non-Blocking Notifications &amp; Input Stability
                 </span>
-                . All multi-translation Bibles, hymnals, fonts, and display
-                pipelines remain completely offline and local.
+                . Replaced modal dialog alerts with native in-app Sonner toasts, eliminating input and search bar freeze issues when saving or loading playlists.
+              </li>
+              <li>
+                <span className={`font-semibold ${textTitle}`}>
+                  Documents Default Directory
+                </span>
+                . Service plan saving and opening dialogs now default cleanly to your system Documents folder.
+              </li>
+              <li>
+                <span className={`font-semibold ${textTitle}`}>
+                  WordDesk Header Branding
+                </span>
+                . Standardized presentation header branding to WordDesk with automatic configuration migration.
+              </li>
+              <li>
+                <span className={`font-semibold ${textTitle}`}>
+                  Continuous Font Size Scaling &amp; Offline Core
+                </span>
+                . Smooth free-sliding scale between 75% and 200% with complete offline resilience for local Bibles and hymnals.
               </li>
             </ul>
           </div>

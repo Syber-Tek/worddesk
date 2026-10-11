@@ -17,6 +17,9 @@ import {
   FaClockRotateLeft,
   FaTrashCan,
   FaFileLines,
+  FaGripVertical,
+  FaYoutube,
+  FaImage,
 } from "react-icons/fa6";
 
 export default function PlanView({
@@ -26,6 +29,7 @@ export default function PlanView({
   handlePresentItemNow,
   handleMoveUp,
   handleMoveDown,
+  handleReorderPlaylist,
   handleDeleteItem,
   missingMediaIds,
   handleRelinkMedia,
@@ -39,6 +43,8 @@ export default function PlanView({
 }) {
   const isLight = themeMode === "light";
   const [showRecentMenu, setShowRecentMenu] = useState(false);
+  const [draggedIndex, setDraggedIndex] = useState(null);
+  const [dragOverIndex, setDragOverIndex] = useState(null);
 
   return (
     <div className="@container space-y-4 max-w-4xl w-full mx-auto">
@@ -250,22 +256,66 @@ export default function PlanView({
           </div>
         ) : (
           <div className="space-y-2">
-            {playlist.map((item, index) => (
+            {playlist.map((item, index) => {
+              const isItemYouTube = item.mediaType === "youtube" || item.type === "YouTube Video";
+              const isItemOnlineImage = (item.mediaType === "image" || item.type === "Online Image") && !!item.mediaUrl;
+              const isDragging = draggedIndex === index;
+              const isOver = dragOverIndex === index && draggedIndex !== index;
+
+              return (
               <div
                 key={item.id || index}
-                className={`p-3 rounded-lg border flex items-center justify-between gap-3 transition-colors duration-150 ${
-                  item.status === "live"
-                    ? "bg-live/10 border-live"
-                    : item.status === "next"
-                      ? isLight
-                        ? "bg-[#F3F4F6] border-accent"
-                        : "bg-surface border-accent/40"
-                      : isLight
-                        ? "bg-[#F9FAFB] hover:bg-[#F3F4F6] border-[#E5E7EB]"
-                        : "bg-[#1C1D21] hover:bg-[#24262B] border-[#2A2C31]"
+                draggable={true}
+                onDragStart={(e) => {
+                  e.dataTransfer.setData("text/plain", String(index));
+                  e.dataTransfer.effectAllowed = "move";
+                  setDraggedIndex(index);
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  if (dragOverIndex !== index) setDragOverIndex(index);
+                }}
+                onDragLeave={() => {
+                  if (dragOverIndex === index) setDragOverIndex(null);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const fromStr = e.dataTransfer.getData("text/plain");
+                  const fromIndex = Number(fromStr);
+                  if (!Number.isNaN(fromIndex) && fromIndex !== index && handleReorderPlaylist) {
+                    handleReorderPlaylist(fromIndex, index);
+                  }
+                  setDraggedIndex(null);
+                  setDragOverIndex(null);
+                }}
+                onDragEnd={() => {
+                  setDraggedIndex(null);
+                  setDragOverIndex(null);
+                }}
+                className={`p-3 rounded-lg border flex items-center justify-between gap-3 transition duration-150 ${
+                  isDragging
+                    ? "opacity-30 border-dashed border-accent scale-[0.99]"
+                    : isOver
+                      ? "ring-2 ring-accent border-accent bg-accent/10"
+                      : item.status === "live"
+                        ? "bg-live/10 border-live"
+                        : item.status === "next"
+                          ? isLight
+                            ? "bg-[#F3F4F6] border-accent"
+                            : "bg-surface border-accent/40"
+                          : isLight
+                            ? "bg-[#F9FAFB] hover:bg-[#F3F4F6] border-[#E5E7EB]"
+                            : "bg-[#1C1D21] hover:bg-[#24262B] border-[#2A2C31]"
                 }`}
               >
                 <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                  <div
+                    className="cursor-grab active:cursor-grabbing text-text-muted hover:text-accent p-1 -ml-1 transition shrink-0"
+                    title="Drag up or down to reorder"
+                  >
+                    <FaGripVertical size={13} />
+                  </div>
                   <span className="font-mono text-[10px] text-accent font-bold shrink-0">
                     #{index + 1}
                   </span>
@@ -278,15 +328,25 @@ export default function PlanView({
                       >
                         {item.title}
                       </h4>
-                      <span
-                        className={`text-[9px] uppercase font-mono px-1.5 py-0.5 rounded border shrink-0 ${
-                          isLight
-                            ? "bg-[#E5E7EB] text-[#4B5563] border-[#D1D5DB]"
-                            : "bg-raised text-text-secondary border-border"
-                        }`}
-                      >
-                        {item.type || "Slide"}
-                      </span>
+                      {isItemYouTube ? (
+                        <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded border shrink-0 bg-red-950/40 text-red-400 border-red-800/50 flex items-center gap-1 font-semibold">
+                          <FaYoutube size={11} className="text-red-500" /> YouTube
+                        </span>
+                      ) : isItemOnlineImage ? (
+                        <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded border shrink-0 bg-blue-950/40 text-blue-300 border-blue-800/50 flex items-center gap-1 font-semibold">
+                          <FaImage size={10} className="text-blue-400" /> Online Image
+                        </span>
+                      ) : (
+                        <span
+                          className={`text-[9px] uppercase font-mono px-1.5 py-0.5 rounded border shrink-0 ${
+                            isLight
+                              ? "bg-[#E5E7EB] text-[#4B5563] border-[#D1D5DB]"
+                              : "bg-raised text-text-secondary border-border"
+                          }`}
+                        >
+                          {item.type || "Slide"}
+                        </span>
+                      )}
                     </div>
                     <p
                       className={`text-[11px] truncate mt-0.5 ${
@@ -385,7 +445,8 @@ export default function PlanView({
                   </button>
                 </div>
               </div>
-            ))}
+            );
+          })}
           </div>
         )}
       </div>

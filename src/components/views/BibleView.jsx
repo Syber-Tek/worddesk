@@ -532,10 +532,18 @@ export default function BibleView({
                 Next
               </button>
               <button
-                onClick={() =>
-                  handleAddToPlaylist &&
-                  handleAddToPlaylist(getVerseWithSecondary(activeSelectedVerse))
-                }
+                onClick={() => {
+                  if (!handleAddToPlaylist || !activeSelectedVerse) return;
+                  const withSec = getVerseWithSecondary(activeSelectedVerse);
+                  handleAddToPlaylist({
+                    ...withSec,
+                    book: activeSelectedVerse.book || selectedBook,
+                    chapter: activeSelectedVerse.chapter || selectedChapter,
+                    verse: activeSelectedVerse.verse,
+                    translation: selectedTranslation,
+                    ref: activeSelectedVerse.ref || `${selectedBook} ${selectedChapter}:${activeSelectedVerse.verse}`,
+                  });
+                }}
                 className={`w-full py-2.5 px-3 border hover:border-accent/50 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer ${
                   isLight
                     ? "bg-[#F3F4F6] hover:bg-[#E5E7EB] border-[#E5E7EB] text-[#111827]"

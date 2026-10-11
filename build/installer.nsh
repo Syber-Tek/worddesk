@@ -98,3 +98,23 @@ Your Bible, hymns, service plans and preferences are kept either way." \
   ; Nothing installed, or a stale uninstaller entry: install normally.
   SetOverwrite off
 !macroend
+
+!macro customInstall
+  ; Clean up legacy shortcuts from before rebranding to WordDesk
+  Delete "$DESKTOP\WorshipDesk.lnk"
+  Delete "$SMPROGRAMS\WorshipDesk.lnk"
+
+  ; Update or clean legacy Taskbar pinned shortcut so it automatically points to WordDesk
+  IfFileExists "$APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\WorshipDesk.lnk" 0 +3
+    Delete "$APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\WorshipDesk.lnk"
+    CreateShortCut "$APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\WordDesk.lnk" "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
+
+  ; Clean up legacy WorshipDesk installation folder if it exists
+  IfFileExists "$LOCALAPPDATA\Programs\worshipdesk\*.*" 0 +3
+    ExecWait '"$LOCALAPPDATA\Programs\worshipdesk\Uninstall WorshipDesk.exe" /S _?=$LOCALAPPDATA\Programs\worshipdesk'
+    RMDir /r "$LOCALAPPDATA\Programs\worshipdesk"
+
+  IfFileExists "$PROGRAMFILES\WorshipDesk\*.*" 0 +3
+    ExecWait '"$PROGRAMFILES\WorshipDesk\Uninstall WorshipDesk.exe" /S _?=$PROGRAMFILES\WorshipDesk'
+    RMDir /r "$PROGRAMFILES\WorshipDesk"
+!macroend

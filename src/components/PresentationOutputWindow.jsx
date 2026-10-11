@@ -90,21 +90,26 @@ export default function PresentationOutputWindow() {
     );
   }
 
-  // A media slide IS the slide: the picked file fills the screen, and the
+  // A media slide IS the slide: the picked file or online stream fills the screen, and the
   // app-wide output theme (dark/light/image/video) does not apply to it.
-  if (slideData.mediaName) {
-    if (!media.url) {
+  const effectiveMediaUrl = slideData.mediaUrl || media.url;
+  const isYouTube =
+    slideData.mediaType === "youtube" ||
+    slideData.type === "YouTube Video" ||
+    !!slideData.youtubeId;
+
+  if (slideData.mediaName || slideData.mediaUrl || isYouTube) {
+    if (!effectiveMediaUrl && !slideData.youtubeId) {
       return (
         <div className="h-screen w-screen bg-black flex flex-col items-center justify-center gap-3 text-white select-none font-sans p-8">
           <div className="text-xl font-bold tracking-widest uppercase text-red-400">
-            Media File Not Found
+            Media Not Available
           </div>
           <p className="text-sm text-white/70 text-center max-w-lg leading-relaxed">
-            {slideData.title || slideData.mediaName}
+            {slideData.title || slideData.mediaName || "No URL provided"}
           </p>
           <p className="text-xs text-white/50 text-center max-w-lg leading-relaxed">
-            The file is no longer where WordDesk stored it. Close the planner
-            item's menu and choose Relink to point it at the file again.
+            The media item could not be loaded. Check the file or internet link in your Service Plan.
           </p>
         </div>
       );
@@ -113,8 +118,8 @@ export default function PresentationOutputWindow() {
     return (
       <div className="h-screen w-screen bg-black relative overflow-hidden select-none">
         <MediaSlide
-          type={slideData.mediaType}
-          url={media.url}
+          type={isYouTube ? "youtube" : slideData.mediaType || (slideData.type === "Online Image" ? "image" : undefined)}
+          url={effectiveMediaUrl || (slideData.youtubeId ? `https://www.youtube.com/watch?v=${slideData.youtubeId}` : "")}
           fit={slideData.mediaFit}
           allowAudio={IS_AUDIO_OWNER && slideData.mediaMuted === false}
           label={slideData.title}

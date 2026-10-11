@@ -375,7 +375,8 @@ ipcMain.handle('backup-database', async () => {
 // Save Service Plan File (*.worship / *.json)
 ipcMain.handle('save-plan-file', async (_e, planData) => {
   try {
-    const defaultName = `WorshipPlan-${new Date().toISOString().slice(0, 10)}.worship`;
+    const docsDir = app.getPath('documents');
+    const defaultName = path.join(docsDir, `WordDeskPlan-${new Date().toISOString().slice(0, 10)}.worship`);
     const { canceled, filePath } = await dialog.showSaveDialog({
       title: 'Save WordDesk Service Plan',
       defaultPath: defaultName,
@@ -397,6 +398,7 @@ ipcMain.handle('open-plan-file', async () => {
   try {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       title: 'Open WordDesk Service Plan File',
+      defaultPath: app.getPath('documents'),
       properties: ['openFile'],
       filters: [
         { name: 'WordDesk Plan (*.worship, *.word, *.json)', extensions: ['worship', 'word', 'json'] },
@@ -996,6 +998,61 @@ if (gotInstanceLock) {
   // read to the user as "the app does not work on this laptop". The renderer
   // process paints and paints independently, so the splash shows immediately and
   // its first IPC calls simply queue in main until the import finishes.
+  // Migration check: If the machine had the pre-rebrand WorshipDesk installed,
+  // copy over church.db, WAL files, and user libraries so hymns/bibles/plans persist.
+  try {
+    const currentUserData = app.getPath('userData');
+    const legacyUserData = path.join(path.dirname(currentUserData), 'worshipdesk');
+    const currentDb = path.join(currentUserData, 'church.db');
+    const legacyDb = path.join(legacyUserData, 'church.db');
+
+    if (fs.existsSync(legacyDb) && !fs.existsSync(currentDb)) {
+      startupLog('Migrating database from legacy worshipdesk folder to worddesk...');
+      fs.mkdirSync(currentUserData, { recursive: true });
+      for (const ext of ['', '-wal', '-shm']) {
+        const src = `${legacyDb}${ext}`;
+        const dst = `${currentDb}${ext}`;
+        if (fs.existsSync(src)) {
+          fs.copyFileSync(src, dst);
+        }
+      }
+      for (const sub of ['bibles', 'hymns', 'media']) {
+        const srcDir = path.join(legacyUserData, sub);
+        const dstDir = path.join(currentUserData, sub);
+        if (fs.existsSync(srcDir) && !fs.existsSync(dstDir)) {
+          fs.cpSync(srcDir, dstDir, { recursive: true });
+        }
+      }
+    }
+
+    if (process.platform === 'win32') {
+      const oldShortcut = path.join(app.getPath('desktop'), 'WorshipDesk.lnk');
+      if (fs.existsSync(oldShortcut)) {
+        try {
+          fs.unlinkSync(oldShortcut);
+          startupLog('Removed legacy WorshipDesk desktop shortcut');
+        } catch {
+          // Ignore
+        }
+      }
+
+      // Automatically clean up stale WorshipDesk taskbar pinned shortcut
+      const appData = app.getPath('appData');
+      const taskbarDir = path.join(appData, 'Microsoft', 'Internet Explorer', 'Quick Launch', 'User Pinned', 'TaskBar');
+      const oldTaskbar = path.join(taskbarDir, 'WorshipDesk.lnk');
+      if (fs.existsSync(oldTaskbar)) {
+        try {
+          fs.unlinkSync(oldTaskbar);
+          startupLog('Removed legacy WorshipDesk taskbar shortcut');
+        } catch {
+          // Ignore
+        }
+      }
+    }
+  } catch (err) {
+    startupLog(`Legacy migration check notice: ${err && err.message}`);
+  }
+
   try {
     dbPath = initDatabase();
     startupLog(`database opened at ${dbPath}`);

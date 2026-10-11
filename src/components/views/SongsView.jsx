@@ -357,16 +357,18 @@ export default function SongsView({
                   as Next
                 </button>
                 <button
-                  onClick={() =>
-                    handleAddToPlaylist &&
+                  onClick={() => {
+                    if (!handleAddToPlaylist || !selectedHymn) return;
+                    const lyrics = selectedLyrics || selectedHymn.lyrics || "";
                     handleAddToPlaylist({
                       title: selectedHymn.title,
-                      content: selectedLyrics || selectedHymn.lyrics || "",
+                      content: lyrics,
+                      lyrics: lyrics,
                       type: "Hymn",
                       hymn_number: selectedHymn.hymn_number,
                       category: selectedHymn.category,
-                    })
-                  }
+                    });
+                  }}
                   className={`py-2.5 px-3 border rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer ${
                     isLight
                       ? "bg-[#F3F4F6] hover:bg-[#E5E7EB] border-[#E5E7EB] text-[#111827]"

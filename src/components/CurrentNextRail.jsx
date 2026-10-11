@@ -1,4 +1,4 @@
-﻿import React from 'react'
+import React from 'react'
 import {
   ArrowLeft,
   ArrowRight,
@@ -27,6 +27,7 @@ export default function CurrentNextRail({
   handleTransportPrev,
   handleTransportNext,
   handleTransportPresentNext,
+  handleTransportPresentPrev,
   handleToggleClear,
   handleToggleBlack,
   handleTransportPresent,
@@ -48,10 +49,16 @@ export default function CurrentNextRail({
   const isLight = themeMode === 'light'
 
   // While a PDF is on air, Next/Prev step its pages. Otherwise they step Bible
-  // verses, and the disabled state has to follow whichever deck is live.
-  const prevDisabled = isPagingPdf ? mediaPage <= 0 : hymnDeckActive || selectedVerseIndex <= 0
+  // verses or hymn stanzas.
+  const prevDisabled = isPagingPdf
+    ? mediaPage <= 0
+    : isLive
+    ? presentPrevDisabled
+    : hymnDeckActive || selectedVerseIndex <= 0
   const nextDisabled = isPagingPdf
     ? mediaPage >= mediaPageCount - 1
+    : isLive
+    ? presentNextDisabled
     : hymnDeckActive || selectedVerseIndex >= filteredVersesLength - 1
 
   return (
@@ -87,15 +94,17 @@ export default function CurrentNextRail({
           </div>
 
           <div className="min-h-14 flex flex-col justify-center">
-            {currentSlide?.mediaName ? (
-              // A media slide's title is just its filename, and the thumbnail
+            {currentSlide?.mediaName || currentSlide?.mediaUrl || currentSlide?.mediaType === 'youtube' || currentSlide?.type === 'YouTube Video' ? (
+              // A media slide's title is just its filename or stream name, and the thumbnail
               // below already shows the content. Name the kind instead.
               <h4 className={`font-bold text-xs ${isLight ? 'text-[#111827]' : 'text-text-primary'}`}>
-                {currentSlide.mediaType === 'pdf'
-                  ? 'PDF slide'
-                  : currentSlide.mediaType === 'video'
-                    ? 'Video slide'
-                    : 'Image slide'}
+                {currentSlide.mediaType === 'youtube' || currentSlide.type === 'YouTube Video'
+                  ? 'YouTube Video'
+                  : currentSlide.mediaType === 'pdf'
+                    ? 'PDF slide'
+                    : currentSlide.mediaType === 'video'
+                      ? 'Video slide'
+                      : 'Image slide'}
                 {currentSlide.mediaMuted === false ? ' (with sound)' : ''}
               </h4>
             ) : currentSlide && (currentSlide.title || currentSlide.ref || currentSlide.content || currentSlide.text) ? (
@@ -112,10 +121,12 @@ export default function CurrentNextRail({
                 No active live slide projected
               </p>
             )}
-            {currentSlide?.mediaName && (
+            {(currentSlide?.mediaName || currentSlide?.mediaUrl || currentSlide?.mediaType === 'youtube' || currentSlide?.type === 'YouTube Video') && (
               <MediaThumb
-                type={currentSlide.mediaType}
+                type={currentSlide.mediaType || (currentSlide.type === 'YouTube Video' ? 'youtube' : 'image')}
                 name={currentSlide.mediaName}
+                url={currentSlide.mediaUrl}
+                youtubeId={currentSlide.youtubeId}
                 fit={currentSlide.mediaFit}
                 page={mediaPage}
                 onPageCount={onMediaPageCount}
@@ -151,15 +162,17 @@ export default function CurrentNextRail({
           </div>
 
           <div className="min-h-14 flex flex-col justify-center">
-            {nextSlide?.mediaName ? (
+            {nextSlide?.mediaName || nextSlide?.mediaUrl || nextSlide?.mediaType === 'youtube' || nextSlide?.type === 'YouTube Video' ? (
               <h4 className={`font-bold text-xs ${isLight ? 'text-[#111827]' : 'text-text-primary'}`}>
-                {nextSlide.mediaType === 'pdf'
-                  ? 'PDF slide'
-                  : nextSlide.mediaType === 'video'
-                    ? 'Video slide'
-                    : 'Image slide'}
+                {nextSlide.mediaType === 'youtube' || nextSlide.type === 'YouTube Video'
+                  ? 'YouTube Video'
+                  : nextSlide.mediaType === 'pdf'
+                    ? 'PDF slide'
+                    : nextSlide.mediaType === 'video'
+                      ? 'Video slide'
+                      : 'Image slide'}
               </h4>
-            ) : nextSlide ? (
+            ) : nextSlide && (nextSlide.title || nextSlide.content || nextSlide.text || nextSlide.ref) ? (
               <>
                 <h4 className={`font-bold text-xs ${isLight ? 'text-[#111827]' : 'text-text-primary'}`}>
                   {nextSlide.title || nextSlide.ref}
@@ -173,10 +186,12 @@ export default function CurrentNextRail({
                 No next slide staged
               </p>
             )}
-            {nextSlide?.mediaName && (
+            {(nextSlide?.mediaName || nextSlide?.mediaUrl || nextSlide?.mediaType === 'youtube' || nextSlide?.type === 'YouTube Video') && (
               <MediaThumb
-                type={nextSlide.mediaType}
+                type={nextSlide.mediaType || (nextSlide.type === 'YouTube Video' ? 'youtube' : 'image')}
                 name={nextSlide.mediaName}
+                url={nextSlide.mediaUrl}
+                youtubeId={nextSlide.youtubeId}
                 fit={nextSlide.mediaFit}
               />
             )}
@@ -338,7 +353,7 @@ export default function CurrentNextRail({
 
         <div className="grid grid-cols-2 gap-1.5">
           <button
-            onClick={handleTransportPrev}
+            onClick={isLive ? (handleTransportPresentPrev || handleTransportPrev) : handleTransportPrev}
             disabled={prevDisabled}
             className={`py-2 border rounded font-semibold text-[11px] flex items-center justify-center gap-1 transition disabled:opacity-40 cursor-pointer ${
               isLight
@@ -349,7 +364,7 @@ export default function CurrentNextRail({
             <ArrowLeft set="light" primaryColor="currentColor" size="small" /> Prev
           </button>
           <button
-            onClick={handleTransportNext}
+            onClick={isLive ? handleTransportPresentNext : handleTransportNext}
             disabled={nextDisabled}
             className={`py-2 border rounded font-semibold text-[11px] flex items-center justify-center gap-1 transition disabled:opacity-40 cursor-pointer ${
               isLight

@@ -26,8 +26,23 @@ const FIT_CLASS = {
   cover: "object-cover",
 };
 
+export function extractYouTubeId(url) {
+  if (!url || typeof url !== "string") return null;
+  const trimmed = url.trim();
+  const pattern = new RegExp("(?:youtu\\.be\\/|v\\/|u\\/\\w\\/|embed\\/|shorts\\/|watch\\?v=|&v=)([^#&?]+)");
+  const match = trimmed.match(pattern);
+  if (match && match[1] && match[1].length === 11) {
+    return match[1];
+  }
+  const idPattern = new RegExp("^[a-zA-Z0-9_-]{11}$");
+  if (idPattern.test(trimmed)) {
+    return trimmed;
+  }
+  return null;
+}
+
 /**
- * Renders one media slide: image, video, or the first page of a PDF.
+ * Renders one media slide: image, video, YouTube stream, or the first page of a PDF.
  *
  * `allowAudio` is false on every window except one projector and the stage
  * display, so a clip's sound is heard once rather than once per screen.
@@ -42,6 +57,45 @@ export default function MediaSlide({
   onPageCount,
   replayKey = 0,
 }) {
+  const [imageError, setImageError] = useState(false);
+
+  if (type === "youtube") {
+    const videoId = extractYouTubeId(url);
+    if (!videoId) {
+      return (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black text-red-400 p-4 text-center">
+          <span className="font-bold text-xs uppercase tracking-wide">Invalid YouTube Link</span>
+          <span className="text-[11px] text-white/60 mt-1">Please check the pasted YouTube URL or video ID</span>
+        </div>
+      );
+    }
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      return (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/95 text-amber-400 p-6 text-center space-y-2">
+          <span className="text-sm font-bold uppercase tracking-wider">Offline — Internet Connection Required</span>
+          <p className="text-xs text-white/70 max-w-md">YouTube video playback requires an active internet connection.</p>
+        </div>
+      );
+    }
+
+    const autoplayParam = allowAudio ? "autoplay=1&mute=0" : "autoplay=1&mute=1";
+    const embedBase = ["https:", "", "www.youtube.com", "embed", videoId].join("/");
+    const embedUrl = `${embedBase}?${autoplayParam}&enablejsapi=1&rel=0`;
+    return (
+      <div className="absolute inset-0 w-full h-full bg-black flex items-center justify-center overflow-hidden">
+        <iframe
+          key={`${videoId}-${replayKey}`}
+          src={embedUrl}
+          title={label || "YouTube Video"}
+          className="w-full h-full border-0"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowFullScreen
+        />
+      </div>
+    );
+  }
+
   if (type === "video") {
     return (
       <video
@@ -60,10 +114,20 @@ export default function MediaSlide({
     return <PdfPage url={url} fit={fit} page={page} onPageCount={onPageCount} />;
   }
 
+  if (imageError) {
+    return (
+      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 text-amber-300 p-4 text-center">
+        <span className="font-bold text-xs uppercase tracking-wide">Image Unavailable</span>
+        <span className="text-[11px] text-white/60 mt-1">Could not load image (check URL or connection)</span>
+      </div>
+    );
+  }
+
   return (
     <img
       src={url}
       alt={label || ""}
+      onError={() => setImageError(true)}
       className={`absolute inset-0 w-full h-full ${FIT_CLASS[fit] || FIT_CLASS.contain}`}
     />
   );
@@ -167,25 +231,53 @@ function PdfPage({ url, fit, page = 0, onPageCount }) {
  * MediaSlide so a preview and the projector can never disagree about a file.
  * Audio is never played here.
  */
-export function MediaThumb({ type, name, fit, page = 0, onPageCount }) {
-  const [url, setUrl] = useState(null);
+export function MediaThumb({ type, name, url: directUrl, youtubeId, fit, page = 0, onPageCount }) {
+  const [resolvedUrl, setResolvedUrl] = useState(directUrl || null);
   const [missing, setMissing] = useState(false);
 
   useEffect(() => {
+    if (directUrl) {
+      setResolvedUrl(directUrl);
+      setMissing(false);
+      return;
+    }
     if (!name || !window.api || !window.api.resolveMediaUrls) return;
     let cancelled = false;
     window.api.resolveMediaUrls([name]).then((map) => {
       if (cancelled) return;
       const resolved = map?.[name]?.url || null;
-      setUrl(resolved);
+      setResolvedUrl(resolved);
       setMissing(!resolved);
     });
     return () => {
       cancelled = true;
     };
-  }, [name]);
+  }, [name, directUrl]);
 
-  if (!name) return null;
+  if (type === "youtube" || youtubeId) {
+    const yId = youtubeId || extractYouTubeId(directUrl || name);
+    const thumbUrl = yId
+      ? ["https:", "", "img.youtube.com", "vi", yId, "hqdefault.jpg"].join("/")
+      : null;
+    return (
+      <div className="relative w-full aspect-video rounded overflow-hidden bg-black mt-1.5 flex items-center justify-center group">
+        {thumbUrl ? (
+          <img
+            src={thumbUrl}
+            alt="YouTube Thumbnail"
+            className="w-full h-full object-cover opacity-80"
+          />
+        ) : null}
+        <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+          <div className="w-8 h-8 rounded-full bg-red-600/90 flex items-center justify-center text-white text-xs font-bold shadow-lg">
+            ▶
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!name && !directUrl) return null;
 
   if (missing) {
     return (
@@ -195,13 +287,13 @@ export function MediaThumb({ type, name, fit, page = 0, onPageCount }) {
     );
   }
 
-  if (!url) return null;
+  if (!resolvedUrl) return null;
 
   return (
     <div className="relative w-full aspect-video rounded overflow-hidden bg-black/40 mt-1.5">
       <MediaSlide
         type={type}
-        url={url}
+        url={resolvedUrl}
         fit={fit || "contain"}
         allowAudio={false}
         page={page}

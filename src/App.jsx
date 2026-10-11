@@ -239,9 +239,11 @@ export default function App() {
   });
 
   const [customHeaderTitle, setCustomHeaderTitle] = useState(() => {
-    return (
-      localStorage.getItem("church_presenter_header_title") || "WordDesk"
-    );
+    const val = localStorage.getItem("church_presenter_header_title");
+    if (!val || val === "WorshipDesk" || val.toLowerCase() === "worshipdesk") {
+      return "WordDesk";
+    }
+    return val;
   });
 
   const [uiScale, setUiScale] = useState(() => {
@@ -394,7 +396,7 @@ export default function App() {
 
   const handleSavePlanToFile = async () => {
     if (!playlist || playlist.length === 0) {
-      alert("Your Service Order is empty. Add items to your playlist before saving.");
+      toast.error("Your Service Order is empty. Add items to your playlist before saving.");
       return;
     }
     if (!window.api || !window.api.savePlanFile) return;
@@ -414,7 +416,7 @@ export default function App() {
         savedAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         planPayload,
       });
-      alert(`Service Plan saved successfully to ${res.fileName}`);
+      toast.success(`Service Plan saved successfully to ${res.fileName}`);
     }
   };
 
@@ -432,7 +434,7 @@ export default function App() {
         savedAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         planPayload: res.plan,
       });
-      alert(`Loaded "${res.fileName}" (${loadedPlaylist.length} items) into Service Order.`);
+      toast.success(`Loaded "${res.fileName}" (${loadedPlaylist.length} items) into Service Order.`);
     }
   };
 
@@ -442,14 +444,13 @@ export default function App() {
       recentEntry.planPayload.playlist ||
       (Array.isArray(recentEntry.planPayload) ? recentEntry.planPayload : []);
     setPlaylist(loadedPlaylist);
-    alert(`Loaded recent plan "${recentEntry.fileName || recentEntry.title}" into Service Order.`);
+    toast.success(`Loaded recent plan "${recentEntry.fileName || recentEntry.title}" into Service Order.`);
   };
 
   const handleClearPlan = () => {
     if (playlist.length === 0) return;
-    if (window.confirm("Are you sure you want to clear your current Service Order?")) {
-      setPlaylist([]);
-    }
+    setPlaylist([]);
+    toast.info("Cleared Service Order playlist");
   };
 
   const [showAddModal, setShowAddModal] = useState(false);
@@ -714,6 +715,108 @@ export default function App() {
       ? filteredVerses[selectedVerseIndex] || filteredVerses[0]
       : null;
 
+  const parseVerseReference = (refOrTitle) => {
+    if (!refOrTitle || typeof refOrTitle !== "string") return null;
+    const m = String(refOrTitle).match(
+      /^([1-3]?\s*[A-Za-z]+(?:\s+[A-Za-z]+)?)\s+(\d+)[:.](\d+)/i,
+    );
+    if (m) {
+      return {
+        book: m[1].trim(),
+        chapter: parseInt(m[2], 10),
+        verse: parseInt(m[3], 10),
+      };
+    }
+    return null;
+  };
+
+  const syncVerseContext = useCallback(
+    async (item) => {
+      if (!item || !window.api || !window.api.getBooks || !window.api.getVerses) {
+        return null;
+      }
+      const parsed = parseVerseReference(item.ref || item.title);
+      const bookName = item.book || parsed?.book;
+      const chapterNum =
+        item.chapter != null ? Number(item.chapter) : parsed?.chapter;
+      const verseNum =
+        item.verse != null ? Number(item.verse) : parsed?.verse;
+
+      if (!bookName || !chapterNum) return null;
+
+      const targetTranslation = item.translation || selectedTranslation;
+      const primaryBible =
+        (biblesList && biblesList.find((b) => b.code === targetTranslation)) ||
+        (biblesList && biblesList[0]);
+      if (!primaryBible) return null;
+
+      try {
+        const books = await window.api.getBooks(primaryBible.id);
+        if (!books || books.length === 0) return null;
+        const matchedBook =
+          books.find(
+            (b) => normalizeBookName(b.name) === normalizeBookName(bookName),
+          ) || resolveBookInList(books, bookName, targetTranslation);
+        if (!matchedBook) return null;
+
+        const verses = await window.api.getVerses(matchedBook.id, chapterNum);
+        if (!verses || verses.length === 0) return null;
+
+        const mapped = verses.map((v) => ({
+          id: v.id,
+          ref: `${matchedBook.name} ${v.chapter}:${v.verse}`,
+          book: matchedBook.name,
+          chapter: v.chapter,
+          verse: v.verse,
+          text: v.text,
+        }));
+
+        setDbVerses(mapped);
+        setSelectedBook(matchedBook.name);
+        setSelectedChapter(chapterNum);
+
+        const targetIndex = mapped.findIndex(
+          (v) => Number(v.verse) === Number(verseNum),
+        );
+        const finalIndex = targetIndex >= 0 ? targetIndex : 0;
+        setSelectedVerseIndex(finalIndex);
+
+        if (
+          secondaryTranslation &&
+          secondaryTranslation !== "None" &&
+          biblesList
+        ) {
+          const secBible = biblesList.find(
+            (b) => b.code === secondaryTranslation,
+          );
+          if (secBible) {
+            const secBooks = await window.api.getBooks(secBible.id);
+            const secTargetBook = resolveBookInList(
+              secBooks,
+              matchedBook.name,
+              secondaryTranslation,
+            );
+            if (secTargetBook) {
+              const secV = await window.api.getVerses(
+                secTargetBook.id,
+                chapterNum,
+              );
+              if (Array.isArray(secV)) {
+                setSecondaryVerses(secV);
+              }
+            }
+          }
+        }
+
+        return { verses: mapped, index: finalIndex };
+      } catch (err) {
+        console.warn("syncVerseContext error:", err);
+        return null;
+      }
+    },
+    [biblesList, selectedTranslation, secondaryTranslation],
+  );
+
   // The presentation engine owns what is on air. Kept in one place so a slide
   // cannot be shaped differently by two different present paths.
   const {
@@ -760,6 +863,7 @@ export default function App() {
     selectedTranslation,
     getVerseWithSecondary,
     buildHymnDeck,
+    syncVerseContext,
     outputTheme,
     outputBgImage,
     outputBgVideo,
@@ -856,6 +960,18 @@ export default function App() {
     toast.info("Reordered Service Plan item");
   };
 
+  const handleReorderPlaylist = (fromIndex, toIndex) => {
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return;
+    setPlaylist((prev) => {
+      if (fromIndex >= prev.length || toIndex >= prev.length) return prev;
+      const updated = [...prev];
+      const [moved] = updated.splice(fromIndex, 1);
+      updated.splice(toIndex, 0, moved);
+      return updated;
+    });
+    toast.info("Reordered Service Plan item");
+  };
+
   // Open the add/edit modal on an existing row. The modal is reused for both, so
   // the form fields are seeded here rather than duplicated in PlanView.
   const handleOpenEdit = (item) => {
@@ -890,8 +1006,23 @@ export default function App() {
   };
 
   // Submit handler behind the add-custom-slide modal.
-  const handleAddItem = (e) => {
-    e.preventDefault();
+  const handleAddItem = (e, customData = null) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (customData) {
+      setPlaylist((prev) => [
+        ...prev,
+        {
+          id: `item-${Date.now()}`,
+          status: "pending",
+          ...customData,
+        },
+      ]);
+      setNewItemTitle("");
+      setNewItemContent("");
+      setShowAddModal(false);
+      toast.success(`Added "${customData.title || "item"}" to Service Plan`);
+      return;
+    }
     if (!newItemTitle.trim() || !newItemContent.trim()) {
       toast.error("A slide needs both a title and some text");
       return;
@@ -976,7 +1107,7 @@ export default function App() {
   useEffect(() => {
     const mediaNames = playlist
       .map((i) => i.mediaName)
-      .filter((name) => typeof name === "string" && name);
+      .filter((name) => typeof name === "string" && name && !name.startsWith("http://") && !name.startsWith("https://"));
     if (mediaNames.length === 0) {
       setMissingMediaIds(new Set());
       return;
@@ -988,7 +1119,7 @@ export default function App() {
         if (cancelled) return;
         const missing = new Set();
         playlist.forEach((item) => {
-          if (item.mediaName && map && map[item.mediaName]?.exists === false) {
+          if (item.mediaName && !item.mediaUrl && map && map[item.mediaName]?.exists === false) {
             missing.add(item.id);
           }
         });
@@ -1223,10 +1354,11 @@ export default function App() {
               handlePresentItemNow={handlePresentItemNow}
               handleMoveUp={handleMoveUp}
               handleMoveDown={handleMoveDown}
+              handleReorderPlaylist={handleReorderPlaylist}
               handleDeleteItem={handleDeleteItem}
-          missingMediaIds={missingMediaIds}
-          handleRelinkMedia={handleRelinkMedia}
-        handleEditItem={handleOpenEdit}
+              missingMediaIds={missingMediaIds}
+              handleRelinkMedia={handleRelinkMedia}
+              handleEditItem={handleOpenEdit}
               recentPlans={recentPlans}
               handleSavePlanToFile={handleSavePlanToFile}
               handleOpenPlanFromFile={handleOpenPlanFromFile}
@@ -1308,6 +1440,7 @@ export default function App() {
         handleTransportPrev={handleTransportPrev}
         handleTransportNext={handleTransportNext}
         handleTransportPresentNext={handleTransportPresentNext}
+        handleTransportPresentPrev={handleTransportPresentPrev}
         handleToggleClear={handleToggleClear}
         handleToggleBlack={handleToggleBlack}
         handleTransportPresent={handleTransportPresent}

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { Plus, CloseSquare, Edit } from "react-iconly";
+import { FaYoutube, FaImage } from "react-icons/fa6";
 import { isVideo, defaultFit } from "../../lib/mediaKinds.js";
-import { MediaThumb } from "../MediaSlide";
+import { MediaThumb, extractYouTubeId } from "../MediaSlide";
 
 const MEDIA_TYPE = "Media Slide";
 
@@ -32,6 +33,10 @@ export default function AddItemModal({
   const [picking, setPicking] = useState(false);
   const [pickError, setPickError] = useState("");
 
+  // Online media state (YouTube & Web Images)
+  const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+
   // Editing an existing row rather than adding a new one. The media fields are
   // seeded from the item so Fit, sound and the file itself stay editable.
   const editing = !!editingItem;
@@ -40,9 +45,20 @@ export default function AddItemModal({
     if (!editingItem) {
       setPicked([]);
       setPreviewIdx(0);
+      setYoutubeUrl("");
+      setImageUrl("");
       return;
     }
-    if (editingItem.mediaName) {
+    if (editingItem.mediaType === "youtube" || editingItem.type === "YouTube Video") {
+      setYoutubeUrl(editingItem.mediaUrl || editingItem.content || "");
+      setNewItemType("YouTube Video");
+      setNewItemTitle(editingItem.title || "");
+    } else if (editingItem.mediaUrl && (editingItem.mediaType === "image" || editingItem.type === "Online Image")) {
+      setImageUrl(editingItem.mediaUrl);
+      setNewItemType("Online Image");
+      setNewItemTitle(editingItem.title || "");
+      setFit(editingItem.mediaFit || "contain");
+    } else if (editingItem.mediaName) {
       setPicked([
         {
           storedName: editingItem.mediaName,
@@ -56,12 +72,14 @@ export default function AddItemModal({
       setPicked([]);
     }
     setPreviewIdx(0);
-  }, [editingItem]);
+  }, [editingItem, setNewItemType, setNewItemTitle]);
 
   if (!showAddModal) return null;
 
   const isLight = themeMode === "light";
   const isMedia = newItemType === MEDIA_TYPE;
+  const isYouTube = newItemType === "YouTube Video";
+  const isOnlineImage = newItemType === "Online Image";
   const pickedVideo = picked.some((entry) => isVideo(entry.storedName));
 
   const runPick = async (fn) => {
@@ -110,6 +128,67 @@ export default function AddItemModal({
 
   const submit = (e) => {
     e.preventDefault();
+    if (isYouTube) {
+      const vId = extractYouTubeId(youtubeUrl);
+      if (!vId) {
+        setPickError("Please enter a valid YouTube video URL or ID");
+        return;
+      }
+      const title = newItemTitle.trim() || "YouTube Video";
+      if (editing) {
+        onEdit({
+          title,
+          content: youtubeUrl.trim(),
+          type: "YouTube Video",
+          mediaType: "youtube",
+          mediaUrl: youtubeUrl.trim(),
+          youtubeId: vId,
+        });
+      } else {
+        handleAddItem(e, {
+          title,
+          content: youtubeUrl.trim(),
+          type: "YouTube Video",
+          mediaType: "youtube",
+          mediaUrl: youtubeUrl.trim(),
+          youtubeId: vId,
+        });
+        setYoutubeUrl("");
+        setNewItemTitle("");
+        setPickError("");
+      }
+      return;
+    }
+    if (isOnlineImage) {
+      if (!imageUrl.trim()) {
+        setPickError("Please enter an image web URL");
+        return;
+      }
+      const title = newItemTitle.trim() || "Online Image";
+      if (editing) {
+        onEdit({
+          title,
+          content: imageUrl.trim(),
+          type: "Online Image",
+          mediaType: "image",
+          mediaUrl: imageUrl.trim(),
+          mediaFit: fit,
+        });
+      } else {
+        handleAddItem(e, {
+          title,
+          content: imageUrl.trim(),
+          type: "Online Image",
+          mediaType: "image",
+          mediaUrl: imageUrl.trim(),
+          mediaFit: fit,
+        });
+        setImageUrl("");
+        setNewItemTitle("");
+        setPickError("");
+      }
+      return;
+    }
     if (isMedia) {
       if (picked.length === 0) {
         setPickError("Choose at least one file first");
@@ -222,11 +301,141 @@ export default function AddItemModal({
               <option value="Hymn">Hymn / Song</option>
               <option value="Custom Slide">Custom Sermon Slide</option>
               <option value="Announcement">Announcement</option>
-              <option value={MEDIA_TYPE}>Media Slide (image / video / PDF)</option>
+              <option value={MEDIA_TYPE}>Media Slide (Local Image / Video / PDF)</option>
+              <option value="YouTube Video">YouTube Video (Online Stream)</option>
+              <option value="Online Image">Online Image (Web URL)</option>
             </select>
           </div>
 
-          {isMedia ? (
+          {isYouTube ? (
+            <div className="space-y-3">
+              <div>
+                <label className={labelCls}>
+                  YouTube Video Link or ID
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. https://www.youtube.com/watch?v=... or youtu.be/..."
+                    value={youtubeUrl}
+                    onChange={(e) => {
+                      setYoutubeUrl(e.target.value);
+                      setPickError("");
+                    }}
+                    className={inputCls}
+                  />
+                </div>
+                <p className={`mt-1 text-[10px] ${isLight ? "text-[#6B7280]" : "text-[#6B6C73]"}`}>
+                  Paste any YouTube URL (standard, shortened youtu.be, or video ID). Streams live on the projector when connected to the internet.
+                </p>
+              </div>
+
+              <div>
+                <label className={labelCls}>
+                  Slide Title (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Opening Worship Video"
+                  value={newItemTitle}
+                  onChange={(e) => setNewItemTitle(e.target.value)}
+                  className={inputCls}
+                />
+              </div>
+
+              {extractYouTubeId(youtubeUrl) && (
+                <div>
+                  <span className={labelCls}>Thumbnail Preview</span>
+                  <div className={`rounded border overflow-hidden ${isLight ? "border-[#E5E7EB]" : "border-[#2A2C31]"}`}>
+                    <MediaThumb
+                      type="youtube"
+                      youtubeId={extractYouTubeId(youtubeUrl)}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {pickError && (
+                <p className="text-[10px] text-red-400 font-semibold">{pickError}</p>
+              )}
+            </div>
+          ) : isOnlineImage ? (
+            <div className="space-y-3">
+              <div>
+                <label className={labelCls}>
+                  Image Web URL
+                </label>
+                <input
+                  type="text"
+                  placeholder="https://images.unsplash.com/... or https://...jpg"
+                  value={imageUrl}
+                  onChange={(e) => {
+                    setImageUrl(e.target.value);
+                    setPickError("");
+                  }}
+                  className={inputCls}
+                />
+                <p className={`mt-1 text-[10px] ${isLight ? "text-[#6B7280]" : "text-[#6B6C73]"}`}>
+                  Paste a direct link to any web image (JPG, PNG, WebP).
+                </p>
+              </div>
+
+              <div>
+                <label className={labelCls}>
+                  Slide Title (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Welcome Wallpaper"
+                  value={newItemTitle}
+                  onChange={(e) => setNewItemTitle(e.target.value)}
+                  className={inputCls}
+                />
+              </div>
+
+              <div>
+                <span className={labelCls}>Fit</span>
+                <div className="flex gap-2">
+                  {["contain", "cover"].map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => setFit(option)}
+                      className={`px-3 py-1.5 rounded text-xs font-medium transition cursor-pointer ${
+                        fit === option
+                          ? "bg-accent text-bg font-bold"
+                          : isLight
+                            ? "bg-[#E5E7EB] text-[#4B5563]"
+                            : "bg-[#24262B] text-[#9B9CA3]"
+                      }`}
+                    >
+                      {option === "contain" ? "Show whole" : "Fill screen"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {imageUrl.trim() && (
+                <div>
+                  <span className={labelCls}>Image Preview</span>
+                  <div className={`rounded border overflow-hidden aspect-video bg-black/40 relative flex items-center justify-center ${isLight ? "border-[#E5E7EB]" : "border-[#2A2C31]"}`}>
+                    <img
+                      src={imageUrl.trim()}
+                      alt="Preview"
+                      className={`w-full h-full ${fit === "cover" ? "object-cover" : "object-contain"}`}
+                      onError={(e) => {
+                        e.currentTarget.style.display = "none";
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {pickError && (
+                <p className="text-[10px] text-red-400 font-semibold">{pickError}</p>
+              )}
+            </div>
+          ) : isMedia ? (
             <div className="space-y-2">
               <div>
                 <span className={labelCls}>Files</span>

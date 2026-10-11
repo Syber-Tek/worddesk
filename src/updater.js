@@ -121,8 +121,8 @@ export function initUpdater(win) {
   ipcMain.handle('install-update', () => {
     if (!app.isPackaged) return { ok: false, message: 'Not an installed copy.' }
     try {
-      // isSilent = false, isForceRunAfter = true
-      autoUpdater.quitAndInstall(false, true)
+      // isSilent = true, isForceRunAfter = true
+      autoUpdater.quitAndInstall(true, true)
       return { ok: true }
     } catch (err) {
       return { ok: false, message: err.message }
