@@ -211,51 +211,41 @@ export default function AboutSettings({
             >
               <li>
                 <span className={`font-semibold ${textTitle}`}>
-                  Sequential Verse &amp; Hymn Progression
+                  YouTube Playback Unblocked
                 </span>
-                . Presenting scripture or hymns from your service plan now seamlessly prepares and advances to the next verse (e.g. Matthew 3:16 → 17 → 18) or hymn stanza.
+                . Embedded YouTube videos now play reliably on the projector, and a live
+                &quot;Can&apos;t Reach YouTube&quot; card warns the operator instead of leaving a
+                black screen when the network drops mid-service.
               </li>
               <li>
                 <span className={`font-semibold ${textTitle}`}>
-                  Seamless Auto-Updates &amp; Legacy Migration
+                  Translation-Aware Scripture
                 </span>
-                . Updates install silently and reliably without modal interruptions, and legacy shortcuts and data from previous versions migrate automatically.
+                . Service plan verses remember their translation — the code in a reference like
+                &quot;Yohane 3:16 (TWIRV)&quot; is read automatically, Twi and Ewe book names are
+                recognised, and the Bible reader switches to that version on its own.
               </li>
               <li>
                 <span className={`font-semibold ${textTitle}`}>
-                  Draggable Service Plan Order
+                  Plan-Accurate Verse Stepping
                 </span>
-                . Rearrange service schedule items seamlessly with drag-and-drop handles and responsive visual drop targets.
+                . Present Next follows the passage saved in the plan (book, chapter and verse)
+                rather than wherever the reader happened to be, and the verse text is shown
+                exactly as planned — including fully offline.
               </li>
               <li>
                 <span className={`font-semibold ${textTitle}`}>
-                  YouTube &amp; Online Media Slides
+                  Edit Jumps Straight to the Source
                 </span>
-                . Paste any YouTube video link or web image directly into your service plan to stream videos and display photos on air with thumbnail previews.
+                . Editing a scripture opens the Bible reader at that passage, and editing a hymn
+                opens the Song library with its search already filled in.
               </li>
               <li>
                 <span className={`font-semibold ${textTitle}`}>
-                  Non-Blocking Notifications &amp; Input Stability
+                  Simpler Online Media
                 </span>
-                . Replaced modal dialog alerts with native in-app Sonner toasts, eliminating input and search bar freeze issues when saving or loading playlists.
-              </li>
-              <li>
-                <span className={`font-semibold ${textTitle}`}>
-                  Documents Default Directory
-                </span>
-                . Service plan saving and opening dialogs now default cleanly to your system Documents folder.
-              </li>
-              <li>
-                <span className={`font-semibold ${textTitle}`}>
-                  WordDesk Header Branding
-                </span>
-                . Standardized presentation header branding to WordDesk with automatic configuration migration.
-              </li>
-              <li>
-                <span className={`font-semibold ${textTitle}`}>
-                  Continuous Font Size Scaling &amp; Offline Core
-                </span>
-                . Smooth free-sliding scale between 75% and 200% with complete offline resilience for local Bibles and hymnals.
+                . Web-URL image slides have been retired — local images, videos and PDFs plus
+                YouTube streams remain fully supported, with one less way for a service to break.
               </li>
             </ul>
           </div>

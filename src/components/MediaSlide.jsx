@@ -26,20 +26,8 @@ const FIT_CLASS = {
   cover: "object-cover",
 };
 
-export function extractYouTubeId(url) {
-  if (!url || typeof url !== "string") return null;
-  const trimmed = url.trim();
-  const pattern = new RegExp("(?:youtu\\.be\\/|v\\/|u\\/\\w\\/|embed\\/|shorts\\/|watch\\?v=|&v=)([^#&?]+)");
-  const match = trimmed.match(pattern);
-  if (match && match[1] && match[1].length === 11) {
-    return match[1];
-  }
-  const idPattern = new RegExp("^[a-zA-Z0-9_-]{11}$");
-  if (idPattern.test(trimmed)) {
-    return trimmed;
-  }
-  return null;
-}
+export { extractYouTubeId } from "../lib/youtube.js";
+import { extractYouTubeId } from "../lib/youtube.js";
 
 /**
  * Renders one media slide: image, video, YouTube stream, or the first page of a PDF.
@@ -50,6 +38,7 @@ export function extractYouTubeId(url) {
 export default function MediaSlide({
   type,
   url,
+  youtubeId,
   fit = "contain",
   allowAudio = false,
   label = "",
@@ -59,8 +48,47 @@ export default function MediaSlide({
 }) {
   const [imageError, setImageError] = useState(false);
 
-  if (type === "youtube") {
-    const videoId = extractYouTubeId(url);
+  // A dead network does not make the iframe throw — it just leaves a black
+  // rectangle on the projector while navigator.onLine still claims to be online
+  // (DNS/SSL failures do not flip it). So the embed's own host is pinged
+  // continuously and the iframe is swapped for a readable error while unreachable.
+  const isYouTubeSlide = type === "youtube" || !!youtubeId;
+  const [netError, setNetError] = useState(false);
+
+  useEffect(() => {
+    if (!isYouTubeSlide) return;
+    let cancelled = false;
+    const check = async () => {
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        if (!cancelled) setNetError(true);
+        return;
+      }
+      try {
+        await fetch("https://www.youtube-nocookie.com/favicon.ico", {
+          method: "GET",
+          mode: "no-cors",
+          cache: "no-store",
+          signal: AbortSignal.timeout(6000),
+        });
+        if (!cancelled) setNetError(false);
+      } catch {
+        if (!cancelled) setNetError(true);
+      }
+    };
+    check();
+    const timer = setInterval(check, 8000);
+    window.addEventListener("online", check);
+    window.addEventListener("offline", check);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      window.removeEventListener("online", check);
+      window.removeEventListener("offline", check);
+    };
+  }, [isYouTubeSlide]);
+
+  if (type === "youtube" || youtubeId) {
+    const videoId = youtubeId || extractYouTubeId(url);
     if (!videoId) {
       return (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black text-red-400 p-4 text-center">
@@ -79,8 +107,21 @@ export default function MediaSlide({
       );
     }
 
+    if (netError) {
+      return (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/95 text-amber-400 p-6 text-center space-y-2">
+          <span className="text-sm font-bold uppercase tracking-wider">Can't Reach YouTube</span>
+          <p className="text-xs text-white/70 max-w-md">
+            The internet is not working or is unstable, so the video cannot load.
+            Check the Wi-Fi or network cable.
+          </p>
+          <span className="text-[11px] text-white/50">Reconnecting automatically…</span>
+        </div>
+      );
+    }
+
     const autoplayParam = allowAudio ? "autoplay=1&mute=0" : "autoplay=1&mute=1";
-    const embedBase = ["https:", "", "www.youtube.com", "embed", videoId].join("/");
+    const embedBase = `https://www.youtube-nocookie.com/embed/${videoId}`;
     const embedUrl = `${embedBase}?${autoplayParam}&enablejsapi=1&rel=0`;
     return (
       <div className="absolute inset-0 w-full h-full bg-black flex items-center justify-center overflow-hidden">
@@ -89,7 +130,8 @@ export default function MediaSlide({
           src={embedUrl}
           title={label || "YouTube Video"}
           className="w-full h-full border-0"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          referrerPolicy="strict-origin-when-cross-origin"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
           allowFullScreen
         />
       </div>
@@ -118,7 +160,10 @@ export default function MediaSlide({
     return (
       <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 text-amber-300 p-4 text-center">
         <span className="font-bold text-xs uppercase tracking-wide">Image Unavailable</span>
-        <span className="text-[11px] text-white/60 mt-1">Could not load image (check URL or connection)</span>
+        <span className="text-[11px] text-white/60 mt-1">
+          The file could not be loaded — it may have been moved or renamed, or it is in a format
+          the projector cannot read.
+        </span>
       </div>
     );
   }

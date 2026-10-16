@@ -1,4 +1,4 @@
-import { app, Menu, BrowserWindow, ipcMain, screen, dialog, Notification, nativeImage, nativeTheme } from 'electron';
+import { app, Menu, BrowserWindow, ipcMain, screen, dialog, Notification, nativeImage, nativeTheme, session } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import {
@@ -930,6 +930,29 @@ const createWindow = () => {
 if (gotInstanceLock) {
   app.whenReady().then(() => {
   startupLog('app ready');
+
+  // Allow embedded YouTube iframes in presentation and preview windows to play without being blocked
+  // by YouTube's Referer / origin checks in Electron.
+  try {
+    const youtubeFilter = {
+      urls: [
+        '*://*.youtube.com/*',
+        '*://*.youtube-nocookie.com/*'
+      ]
+    };
+    session.defaultSession.webRequest.onBeforeSendHeaders(youtubeFilter, (details, callback) => {
+      const requestHeaders = { ...details.requestHeaders };
+      // The embed lives on youtube-nocookie.com and the parent window is a
+      // file:// page, so Chromium sends no Referer (YouTube error 153) and a
+      // spoofed www.youtube.com one is rejected too (error 152). The nocookie
+      // origin is the referrer YouTube accepts. Origin is left alone: Chromium
+      // already sets it correctly for CORS calls, and forging it breaks the player.
+      requestHeaders['Referer'] = 'https://www.youtube-nocookie.com/';
+      callback({ requestHeaders });
+    });
+  } catch (err) {
+    startupLog(`Could not configure YouTube request headers: ${err && err.message}`);
+  }
 
   // Adopt the app theme as the OS theme source so the title bar, native dialogs
   // and scrollbars follow the in-app choice. 'system' keeps tracking the PC.

@@ -1,7 +1,7 @@
 {
   "name": "worddesk",
   "productName": "WordDesk",
-  "version": "1.1.6",
+  "version": "1.1.7",
   "description": "Offline-First Church Worship Presentation System",
   "main": "./out/main/index.js",
   "private": true,
@@ -16,7 +16,7 @@
     "release": "npm version patch && git push --follow-tags",
     "release:minor": "npm version minor && git push --follow-tags",
     "release:major": "npm version major && git push --follow-tags",
-    "test": "node test/mediaKinds.test.mjs && node test/mediaStore.test.mjs && node test/fontScale.test.mjs && node test/fingerprint.test.mjs && node test/hymnCategories.test.mjs && node test/render-smoke.mjs && node test/installer-branches.mjs",
+    "test": "node test/mediaKinds.test.mjs && node test/mediaStore.test.mjs && node test/fontScale.test.mjs && node test/fingerprint.test.mjs && node test/hymnCategories.test.mjs && node test/youtube-and-deck.test.mjs && node test/render-smoke.mjs && node test/installer-branches.mjs",
     "test:refs": "node test/undefined-refs.test.mjs src/App.jsx src/components/CurrentNextRail.jsx src/components/PresentationOutputWindow.jsx src/components/MediaSlide.jsx src/components/modals/AddItemModal.jsx src/components/views/PlanView.jsx src/hooks/usePresentationOutput.js",
     "lint": "echo \"No linting configured\""
   },

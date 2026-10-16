@@ -132,7 +132,7 @@ export default function CurrentNextRail({
                 onPageCount={onMediaPageCount}
               />
             )}
-            {currentSlide?.mediaType === 'video' && onReplayVideo && (
+            {(currentSlide?.mediaType === 'video' || currentSlide?.mediaType === 'youtube' || currentSlide?.type === 'YouTube Video') && onReplayVideo && (
               <button
                 onClick={onReplayVideo}
                 className="mt-1.5 w-full py-1.5 rounded text-[11px] font-bold flex items-center justify-center gap-1.5 transition cursor-pointer bg-accent hover:bg-accent/90 text-bg"

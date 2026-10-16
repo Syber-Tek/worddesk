@@ -120,6 +120,7 @@ export default function PresentationOutputWindow() {
         <MediaSlide
           type={isYouTube ? "youtube" : slideData.mediaType || (slideData.type === "Online Image" ? "image" : undefined)}
           url={effectiveMediaUrl || (slideData.youtubeId ? `https://www.youtube.com/watch?v=${slideData.youtubeId}` : "")}
+          youtubeId={slideData.youtubeId}
           fit={slideData.mediaFit}
           allowAudio={IS_AUDIO_OWNER && slideData.mediaMuted === false}
           label={slideData.title}

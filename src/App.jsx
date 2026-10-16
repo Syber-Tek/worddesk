@@ -14,7 +14,13 @@ import SplashScreen from "./components/SplashScreen";
 import { stepScale, getFontScaleLabel } from "./lib/fontScale.js";
 import { Toaster, toast } from "sonner";
 
-import { resolveBookInList, normalizeBookName } from "./bibleBooks.js";
+import {
+  resolveBookInList,
+  normalizeBookName,
+  matchBibleTranslation,
+  extractTranslationFromRef,
+  detectLanguageFromBook,
+} from "./bibleBooks.js";
 import { defaultFit } from "./lib/mediaKinds.js";
 import usePresentationOutput from "./hooks/usePresentationOutput.js";
 
@@ -480,6 +486,7 @@ export default function App() {
   const [secondaryTranslation, setSecondaryTranslation] = useState("None");
   const [secondaryVerses, setSecondaryVerses] = useState([]);
   // Hymn stanza deck (set when presenting a hymn so it navigates stanza by stanza)
+  const [hymnSearchQuery, setHymnSearchQuery] = useState("");
   const searchInputRef = useRef(null);
 
   // Fetch Bibles from SQLite on mount
@@ -718,7 +725,7 @@ export default function App() {
   const parseVerseReference = (refOrTitle) => {
     if (!refOrTitle || typeof refOrTitle !== "string") return null;
     const m = String(refOrTitle).match(
-      /^([1-3]?\s*[A-Za-z]+(?:\s+[A-Za-z]+)?)\s+(\d+)[:.](\d+)/i,
+      /^([1-3]?\s*[\p{L}]+(?:\s+[\p{L}]+)*?)\s+(\d+)[:.](\d+)/iu,
     );
     if (m) {
       return {
@@ -744,11 +751,25 @@ export default function App() {
 
       if (!bookName || !chapterNum) return null;
 
-      const targetTranslation = item.translation || selectedTranslation;
+      // Extract translation from item or reference text (e.g. "Yohane 3:16 (TWIRV)" or "John 3:16 (EWE)")
+      const extractedTrans =
+        extractTranslationFromRef(item.ref) ||
+        extractTranslationFromRef(item.title);
+      // If no translation was explicitly given, detect from the book name itself (e.g. "Nnwom" -> "Twi")
+      const detectedLang = !item.translation && !extractedTrans ? detectLanguageFromBook(bookName) : null;
+      const targetTranslation =
+        item.translation || extractedTrans || detectedLang || selectedTranslation;
+
       const primaryBible =
-        (biblesList && biblesList.find((b) => b.code === targetTranslation)) ||
+        matchBibleTranslation(biblesList, targetTranslation) ||
         (biblesList && biblesList[0]);
       if (!primaryBible) return null;
+
+      // If the item belongs to a specific translation (e.g. TWI or EWE from a saved plan),
+      // keep the presenter's active translation in sync so sequential navigation stays in the same Bible.
+      if (primaryBible.code && primaryBible.code !== selectedTranslation) {
+        setSelectedTranslation(primaryBible.code);
+      }
 
       try {
         const books = await window.api.getBooks(primaryBible.id);
@@ -756,7 +777,7 @@ export default function App() {
         const matchedBook =
           books.find(
             (b) => normalizeBookName(b.name) === normalizeBookName(bookName),
-          ) || resolveBookInList(books, bookName, targetTranslation);
+          ) || resolveBookInList(books, bookName, primaryBible.code);
         if (!matchedBook) return null;
 
         const verses = await window.api.getVerses(matchedBook.id, chapterNum);
@@ -881,17 +902,72 @@ export default function App() {
   // presentation engine above, which only decides what is on air.
   // ---------------------------------------------------------------------
 
-  const handleAddToPlaylist = (item) => {
+  const handleAddToPlaylist = async (item) => {
     const slide = normalizeSlide(item);
     if (!slide || !slide.title.trim() || !slide.content.trim()) {
       toast.error("Cannot add empty item to Service Plan");
       return;
     }
-    setPlaylist((prev) => [
-      ...prev,
-      { ...slide, id: `item-${Date.now()}`, status: "pending" },
-    ]);
+    const newItem = { ...slide, id: `item-${Date.now()}`, status: "pending" };
+    setPlaylist((prev) => [...prev, newItem]);
     toast.success(`Added "${slide.title || "item"}" to Service Plan`);
+
+    // When a hymn or Bible verse is added, also prepare next slide so "Present Next"
+    // immediately shows the next Bible verse (e.g. Matthew 3:16 -> 17) or next hymn stanza.
+    if (slide.type === "Hymn") {
+      const slides = buildHymnDeck(slide);
+      setHymnDeck(slides);
+      setHymnDeckIndex(0);
+      const firstSlide = slides[0] || slide;
+      const followingSlide = slides.length > 1 ? slides[1] : {};
+      if (!isLive) {
+        setCurrentSlide(firstSlide);
+        setNextSlide(followingSlide);
+      } else {
+        setNextSlide(followingSlide.title ? followingSlide : firstSlide);
+      }
+    } else if (slide.type === "Bible Verse" && syncVerseContext) {
+      setHymnDeck([]);
+      setHymnDeckIndex(0);
+      const ctx = await syncVerseContext(slide);
+      const verses = ctx?.verses;
+      const vIndex = ctx?.index != null ? ctx.index : 0;
+      const liveVerse = verses && verses[vIndex] ? getVerseWithSecondary(verses[vIndex]) : slide;
+      const nextVerse = verses && verses[vIndex + 1] ? getVerseWithSecondary(verses[vIndex + 1]) : null;
+
+      const liveSlideObj = {
+        id: `verse-${liveVerse.id || Date.now()}`,
+        title: liveVerse.ref || slide.title || "",
+        content: slide.content || liveVerse.text || liveVerse.content || "",
+        secondaryText: liveVerse.secondaryText || "",
+        secondaryTranslation: liveVerse.secondaryTranslation || "",
+        type: "Bible Verse",
+        book: liveVerse.book || slide.book,
+        chapter: liveVerse.chapter != null ? liveVerse.chapter : slide.chapter,
+        verse: liveVerse.verse != null ? liveVerse.verse : slide.verse,
+      };
+
+      const nextSlideObj = nextVerse
+        ? {
+            id: `verse-${nextVerse.id}`,
+            title: nextVerse.ref || "",
+            content: nextVerse.text || "",
+            secondaryText: nextVerse.secondaryText || "",
+            secondaryTranslation: nextVerse.secondaryTranslation || "",
+            type: "Bible Verse",
+            book: nextVerse.book,
+            chapter: nextVerse.chapter,
+            verse: nextVerse.verse,
+          }
+        : {};
+
+      if (!isLive) {
+        setCurrentSlide(liveSlideObj);
+        setNextSlide(nextSlideObj);
+      } else {
+        setNextSlide(nextSlideObj.title ? nextSlideObj : liveSlideObj);
+      }
+    }
   };
 
   // Global shortcuts for the control window. Ignores typing targets so the arrow
@@ -972,18 +1048,68 @@ export default function App() {
     toast.info("Reordered Service Plan item");
   };
 
-  // Open the add/edit modal on an existing row. The modal is reused for both, so
-  // the form fields are seeded here rather than duplicated in PlanView.
+  // Open the add/edit modal on an existing row, or route to Bible/Songs tab to change scriptures and hymns.
   const handleOpenEdit = (item) => {
     if (!item) {
       setEditingItem(null);
       setShowAddModal(false);
       return;
     }
+
+    // If editing a Bible Verse, navigate directly to the Bible tab loaded with this scripture
+    const isVerse =
+      item.type === "Bible Verse" || !!item.ref || (item.book && item.chapter);
+    if (isVerse) {
+      const parsed = parseVerseReference(item.ref || item.title);
+      const bName = item.book || parsed?.book;
+      const chNum = item.chapter != null ? Number(item.chapter) : parsed?.chapter;
+      const vNum = item.verse != null ? Number(item.verse) : parsed?.verse;
+
+      const extractedTrans =
+        extractTranslationFromRef(item.ref) ||
+        extractTranslationFromRef(item.title);
+      const detectedLang = !item.translation && !extractedTrans ? detectLanguageFromBook(bName) : null;
+      const targetTranslation =
+        item.translation || extractedTrans || detectedLang || selectedTranslation;
+
+      const primaryBible =
+        matchBibleTranslation(biblesList, targetTranslation) ||
+        (biblesList && biblesList[0]);
+
+      if (primaryBible?.code) {
+        setSelectedTranslation(primaryBible.code);
+      }
+      if (bName) {
+        setSelectedBook(bName);
+      }
+      if (chNum) {
+        setSelectedChapter(chNum);
+      }
+      if (vNum != null) {
+        setSelectedVerseIndex(Math.max(0, vNum - 1));
+      }
+      setSearchQuery("");
+      setActiveTab("bible");
+      toast.info(`Navigated to Bible reader for "${item.title || "scripture"}"`);
+      return;
+    }
+
+    // If editing a Hymn, navigate directly to the Songs tab loaded with this hymn
+    if (item.type === "Hymn") {
+      const query = item.hymn_number
+        ? String(item.hymn_number)
+        : (item.title || "").replace(/^(?:PH|MH)\s*\d+[\s:–—-]*/i, "").trim();
+      setHymnSearchQuery(query);
+      setActiveTab("songs");
+      toast.info(`Navigated to Hymn library for "${item.title || "hymn"}"`);
+      return;
+    }
+
+    // For custom slides, announcements, and sermon notes, open the custom slide editor modal
     setEditingItem(item);
     setNewItemTitle(item.title || "");
     setNewItemContent(item.content || "");
-    setNewItemType(item.type || "Bible Verse");
+    setNewItemType(item.type || "Custom Slide");
     setShowAddModal(true);
   };
 
@@ -1240,12 +1366,23 @@ export default function App() {
   ]);
 
   const isHymnDeckActive = hymnDeck.length > 1 && currentSlide?.type === "Hymn";
-  const presentNextDisabled =
-    !isLive ||
-    (isHymnDeckActive
-      ? hymnDeckIndex >= hymnDeck.length - 1
-      : selectedVerseIndex >= filteredVerses.length - 1 ||
-        filteredVerses.length === 0);
+  const hasNextSlide = !!(
+    nextSlide &&
+    (nextSlide.title ||
+      nextSlide.content ||
+      nextSlide.ref ||
+      nextSlide.text ||
+      nextSlide.mediaName ||
+      nextSlide.mediaUrl ||
+      nextSlide.youtubeId)
+  );
+  const presentNextDisabled = isHymnDeckActive
+    ? hymnDeckIndex >= hymnDeck.length - 1
+    : hasNextSlide
+      ? false
+      : !isLive ||
+        selectedVerseIndex >= filteredVerses.length - 1 ||
+        filteredVerses.length === 0;
   const presentPrevDisabled = isHymnDeckActive
     ? hymnDeckIndex <= 0
     : selectedVerseIndex <= 0;
@@ -1301,8 +1438,8 @@ export default function App() {
               isLive={isLive}
               currentSlide={currentSlide}
               nextSlide={nextSlide}
-              handlePresentNow={handlePresentNow}
-              handleStageNext={handleStageNext}
+              handlePresentNow={handlePresentItemNow}
+              handleStageNext={handleSelectItem}
               themeMode={effectiveTheme}
             />
           )}
@@ -1343,6 +1480,8 @@ export default function App() {
               defaultHymnCategory={defaultHymnCategory}
               showHymnNumbers={showHymnNumbers}
               hymnTextScale={hymnTextScale}
+              hymnSearchQuery={hymnSearchQuery}
+              setHymnSearchQuery={setHymnSearchQuery}
             />
           )}
 

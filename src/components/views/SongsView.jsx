@@ -21,10 +21,14 @@ export default function SongsView({
   defaultHymnCategory = "All",
   showHymnNumbers = true,
   hymnTextScale = "normal",
+  hymnSearchQuery: externalSearchQuery,
+  setHymnSearchQuery: externalSetSearchQuery,
 }) {
   const isLight = themeMode === "light";
   const [hymnsList, setHymnsList] = useState([]);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [internalSearchQuery, setInternalSearchQuery] = useState("");
+  const searchQuery = externalSearchQuery !== undefined ? externalSearchQuery : internalSearchQuery;
+  const setSearchQuery = externalSetSearchQuery || setInternalSearchQuery;
   const [selectedCategory, setSelectedCategory] = useState(
     ALL_HYMN_CATEGORIES,
   );
