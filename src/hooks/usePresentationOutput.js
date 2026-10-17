@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { extractYouTubeId } from "../components/MediaSlide";
 
 /**
  * The presentation engine: everything that decides what is on the projector.
@@ -67,19 +68,32 @@ export default function usePresentationOutput({
   // fields are the fragile ones: drop them and the output window falls through
   // to the text renderer, which draws the slide title as a bottom attribution
   // line, so a photo silently becomes a filename.
-  const mediaOverrides = (slide) => ({
-    mediaType: slide?.mediaType || null,
-    mediaName: slide?.mediaName || null,
-    mediaUrl: slide?.mediaUrl || null,
-    youtubeId: slide?.youtubeId || null,
-    mediaFit: slide?.mediaFit || "contain",
-    mediaMuted: slide?.mediaMuted !== false,
-  });
+  const mediaOverrides = (slide) => {
+    const isYouTube =
+      slide?.mediaType === "youtube" ||
+      slide?.type === "YouTube Video" ||
+      !!slide?.youtubeId;
+    return {
+      mediaType: isYouTube ? "youtube" : slide?.mediaType || null,
+      mediaName: slide?.mediaName || null,
+      mediaUrl: slide?.mediaUrl || null,
+      youtubeId:
+        slide?.youtubeId ||
+        (isYouTube ? extractYouTubeId(slide?.mediaUrl || slide?.content) : null),
+      mediaFit: slide?.mediaFit || "contain",
+      mediaMuted:
+        slide?.mediaMuted === true
+          ? true
+          : isYouTube
+            ? false
+            : slide?.mediaMuted !== false,
+    };
+  };
 
   const parseVerseRef = (refOrTitle) => {
     if (!refOrTitle || typeof refOrTitle !== "string") return null;
     const m = String(refOrTitle).match(
-      /^([1-3]?\s*[A-Za-z]+(?:\s+[A-Za-z]+)?)\s+(\d+)[:.](\d+)/i,
+      /^([1-3]?\s*[A-Za-z]+(?:\s+[A-Za-z]+)*?)\s+(\d+)[:.](\d+)/i,
     );
     if (m) {
       return {
@@ -276,16 +290,19 @@ export default function usePresentationOutput({
 
     if (isVerse && syncVerseContext) {
       const ctx = await syncVerseContext(item);
-      const verses = ctx?.verses || filteredVerses;
-      const vIndex = ctx?.index != null ? ctx.index : selectedVerseIndex;
-      const stagedVerse = verses[vIndex] ? getVerseWithSecondary(verses[vIndex]) : item;
+      const verses = ctx?.verses;
+      const vIndex = ctx?.index != null ? ctx.index : 0;
+      const stagedVerse = verses && verses[vIndex] ? getVerseWithSecondary(verses[vIndex]) : item;
       const stagedSlide = {
         id: item.id || `verse-${stagedVerse.id || Date.now()}`,
         title: stagedVerse.ref || item.title || "",
-        content: stagedVerse.text || stagedVerse.content || "",
+        content: item.content || stagedVerse.text || stagedVerse.content || "",
         secondaryText: stagedVerse.secondaryText || "",
         secondaryTranslation: stagedVerse.secondaryTranslation || "",
         type: "Bible Verse",
+        book: stagedVerse.book || item.book,
+        chapter: stagedVerse.chapter != null ? stagedVerse.chapter : item.chapter,
+        verse: stagedVerse.verse != null ? stagedVerse.verse : item.verse,
         ...mediaOverrides(item),
       };
       setNextSlide(stagedSlide);
@@ -365,19 +382,29 @@ export default function usePresentationOutput({
       setHymnDeck([]);
       setHymnDeckIndex(0);
       const ctx = await syncVerseContext(item);
-      const verses = ctx?.verses || filteredVerses;
-      const vIndex = ctx?.index != null ? ctx.index : selectedVerseIndex;
+      const verses = ctx?.verses;
+      const vIndex = ctx?.index != null ? ctx.index : 0;
 
-      const liveVerse = verses[vIndex] ? getVerseWithSecondary(verses[vIndex]) : item;
-      const nextVerse = verses[vIndex + 1] ? getVerseWithSecondary(verses[vIndex + 1]) : null;
+      if (setSelectedVerseIndex && ctx?.index != null) {
+        setSelectedVerseIndex(ctx.index);
+      }
+
+      const liveVerse = verses && verses[vIndex] ? getVerseWithSecondary(verses[vIndex]) : item;
+      const nextVerse = verses && verses[vIndex + 1] ? getVerseWithSecondary(verses[vIndex + 1]) : null;
+
+      // If this item was loaded from a plan with saved text, that saved text must be honored!
+      const contentToUse = item.content || liveVerse.text || liveVerse.content || "";
 
       const liveSlide = {
         id: item.id || `verse-${liveVerse.id || Date.now()}`,
         title: liveVerse.ref || item.title || "",
-        content: liveVerse.text || liveVerse.content || "",
+        content: contentToUse,
         secondaryText: liveVerse.secondaryText || "",
         secondaryTranslation: liveVerse.secondaryTranslation || "",
         type: "Bible Verse",
+        book: liveVerse.book || item.book,
+        chapter: liveVerse.chapter != null ? liveVerse.chapter : item.chapter,
+        verse: liveVerse.verse != null ? liveVerse.verse : item.verse,
         ...mediaOverrides(item),
       };
 
@@ -389,6 +416,9 @@ export default function usePresentationOutput({
             secondaryText: nextVerse.secondaryText || "",
             secondaryTranslation: nextVerse.secondaryTranslation || "",
             type: "Bible Verse",
+            book: nextVerse.book,
+            chapter: nextVerse.chapter,
+            verse: nextVerse.verse,
           }
         : {};
 
@@ -537,7 +567,17 @@ export default function usePresentationOutput({
         Array.isArray(filteredVerses)
       ) {
         toPresent = nextSlide;
-        const nextV = filteredVerses[selectedVerseIndex + 1];
+        let vIdx = selectedVerseIndex;
+        if (nextSlide.verse != null) {
+          const match = filteredVerses.findIndex(
+            (v) => Number(v.verse) === Number(nextSlide.verse)
+          );
+          if (match >= 0) {
+            vIdx = match;
+            if (setSelectedVerseIndex) setSelectedVerseIndex(vIdx);
+          }
+        }
+        const nextV = filteredVerses[vIdx + 1];
         if (nextV) {
           const secNext = getVerseWithSecondary(nextV);
           nextUp = {
@@ -547,6 +587,9 @@ export default function usePresentationOutput({
             secondaryText: secNext.secondaryText || "",
             secondaryTranslation: secNext.secondaryTranslation || "",
             type: "Bible Verse",
+            book: secNext.book,
+            chapter: secNext.chapter,
+            verse: secNext.verse,
           };
         }
       }
@@ -704,49 +747,97 @@ export default function usePresentationOutput({
           isBlank: false,
         });
         toast.success(`Broadcasting "${slide.title || "slide"}" Live`);
+        return;
       }
-    } else if (selectedVerseIndex < filteredVerses.length - 1) {
-      const nI = selectedVerseIndex + 1;
-      const nextV = getVerseWithSecondary(filteredVerses[nI]);
-      const followingV = filteredVerses[nI + 1] ? getVerseWithSecondary(filteredVerses[nI + 1]) : null;
+    }
 
-      const updatedLive = {
-        id: `verse-${nextV.id}`,
-        title: nextV.ref || `${nextV.ref} (${selectedTranslation})`,
-        content: nextV.text,
-        secondaryText: nextV.secondaryText || "",
-        secondaryTranslation: nextV.secondaryTranslation || "",
-        type: "Bible Verse",
-      };
+    // If offline or presenting initial staged slide, transition it to live
+    if (
+      (!isLive || !currentSlide?.title) &&
+      nextSlide &&
+      (nextSlide.title ||
+        nextSlide.content ||
+        nextSlide.mediaName ||
+        nextSlide.mediaUrl ||
+        nextSlide.youtubeId)
+    ) {
+      handleTransportPresent();
+      return;
+    }
 
-      const updatedNext = followingV
-        ? {
-            id: `verse-${followingV.id}`,
-            title: followingV.ref || `${followingV.ref} (${selectedTranslation})`,
-            content: followingV.text,
-            secondaryText: followingV.secondaryText || "",
-            secondaryTranslation: followingV.secondaryTranslation || "",
-            type: "Bible Verse",
-          }
-        : {};
+    // Bible Verse deck progression
+    if (Array.isArray(filteredVerses) && filteredVerses.length > 0) {
+      let currentIndex = selectedVerseIndex;
+      if (currentSlide?.verse != null) {
+        const matchIdx = filteredVerses.findIndex(
+          (v) => Number(v.verse) === Number(currentSlide.verse)
+        );
+        if (matchIdx >= 0) currentIndex = matchIdx;
+      }
 
-      setSelectedVerseIndex(nI);
-      setCurrentSlide(updatedLive);
-      setNextSlide(updatedNext);
-      setMediaPage(0);
-      setIsLive(true);
-      setIsBlack(false);
-      setIsBlank(false);
+      if (currentIndex < filteredVerses.length - 1) {
+        const nI = currentIndex + 1;
+        const nextV = getVerseWithSecondary(filteredVerses[nI]);
+        const followingV = filteredVerses[nI + 1]
+          ? getVerseWithSecondary(filteredVerses[nI + 1])
+          : null;
 
-      broadcastToPresentation({
-        ...updatedLive,
-        nextSlideTitle: followingV ? (followingV.ref || "") : "",
-        nextSlideContent: followingV ? (followingV.text || "") : "",
-        isLive: true,
-        isBlack: false,
-        isBlank: false,
-      });
-      toast.success(`Broadcasting "${updatedLive.title || "slide"}" Live`);
+        const updatedLive = {
+          id: `verse-${nextV.id}`,
+          title: nextV.ref || `${nextV.ref} (${selectedTranslation})`,
+          content: nextV.text,
+          secondaryText: nextV.secondaryText || "",
+          secondaryTranslation: nextV.secondaryTranslation || "",
+          type: "Bible Verse",
+          book: nextV.book,
+          chapter: nextV.chapter,
+          verse: nextV.verse,
+        };
+
+        const updatedNext = followingV
+          ? {
+              id: `verse-${followingV.id}`,
+              title: followingV.ref || `${followingV.ref} (${selectedTranslation})`,
+              content: followingV.text,
+              secondaryText: followingV.secondaryText || "",
+              secondaryTranslation: followingV.secondaryTranslation || "",
+              type: "Bible Verse",
+              book: followingV.book,
+              chapter: followingV.chapter,
+              verse: followingV.verse,
+            }
+          : {};
+
+        if (setSelectedVerseIndex) setSelectedVerseIndex(nI);
+        setCurrentSlide(updatedLive);
+        setNextSlide(updatedNext);
+        setMediaPage(0);
+        setIsLive(true);
+        setIsBlack(false);
+        setIsBlank(false);
+
+        broadcastToPresentation({
+          ...updatedLive,
+          nextSlideTitle: followingV ? followingV.ref || "" : "",
+          nextSlideContent: followingV ? followingV.text || "" : "",
+          isLive: true,
+          isBlack: false,
+          isBlank: false,
+        });
+        toast.success(`Broadcasting "${updatedLive.title || "slide"}" Live`);
+        return;
+      }
+    }
+
+    if (
+      nextSlide &&
+      (nextSlide.title ||
+        nextSlide.content ||
+        nextSlide.mediaName ||
+        nextSlide.mediaUrl ||
+        nextSlide.youtubeId)
+    ) {
+      handleTransportPresent();
     }
   };
 
@@ -776,48 +867,67 @@ export default function usePresentationOutput({
           isBlack: false,
           isBlank: false,
         });
+        return;
       }
-    } else if (selectedVerseIndex > 0) {
-      const pI = selectedVerseIndex - 1;
-      const prevV = getVerseWithSecondary(filteredVerses[pI]);
-      const nextV = getVerseWithSecondary(filteredVerses[pI + 1]);
+    }
 
-      const updatedLive = {
-        id: `verse-${prevV.id}`,
-        title: prevV.ref || `${prevV.ref} (${selectedTranslation})`,
-        content: prevV.text,
-        secondaryText: prevV.secondaryText || "",
-        secondaryTranslation: prevV.secondaryTranslation || "",
-        type: "Bible Verse",
-      };
+    if (Array.isArray(filteredVerses) && filteredVerses.length > 0) {
+      let currentIndex = selectedVerseIndex;
+      if (currentSlide?.verse != null) {
+        const matchIdx = filteredVerses.findIndex(
+          (v) => Number(v.verse) === Number(currentSlide.verse)
+        );
+        if (matchIdx >= 0) currentIndex = matchIdx;
+      }
 
-      const updatedNext = nextV
-        ? {
-            id: `verse-${nextV.id}`,
-            title: nextV.ref || `${nextV.ref} (${selectedTranslation})`,
-            content: nextV.text,
-            secondaryText: nextV.secondaryText || "",
-            secondaryTranslation: nextV.secondaryTranslation || "",
-            type: "Bible Verse",
-          }
-        : {};
+      if (currentIndex > 0) {
+        const pI = currentIndex - 1;
+        const prevV = getVerseWithSecondary(filteredVerses[pI]);
+        const nextV = getVerseWithSecondary(filteredVerses[pI + 1]);
 
-      setSelectedVerseIndex(pI);
-      setCurrentSlide(updatedLive);
-      setNextSlide(updatedNext);
-      setMediaPage(0);
-      setIsLive(true);
-      setIsBlack(false);
-      setIsBlank(false);
+        const updatedLive = {
+          id: `verse-${prevV.id}`,
+          title: prevV.ref || `${prevV.ref} (${selectedTranslation})`,
+          content: prevV.text,
+          secondaryText: prevV.secondaryText || "",
+          secondaryTranslation: prevV.secondaryTranslation || "",
+          type: "Bible Verse",
+          book: prevV.book,
+          chapter: prevV.chapter,
+          verse: prevV.verse,
+        };
 
-      broadcastToPresentation({
-        ...updatedLive,
-        nextSlideTitle: nextV ? (nextV.ref || "") : "",
-        nextSlideContent: nextV ? (nextV.text || "") : "",
-        isLive: true,
-        isBlack: false,
-        isBlank: false,
-      });
+        const updatedNext = nextV
+          ? {
+              id: `verse-${nextV.id}`,
+              title: nextV.ref || `${nextV.ref} (${selectedTranslation})`,
+              content: nextV.text,
+              secondaryText: nextV.secondaryText || "",
+              secondaryTranslation: nextV.secondaryTranslation || "",
+              type: "Bible Verse",
+              book: nextV.book,
+              chapter: nextV.chapter,
+              verse: nextV.verse,
+            }
+          : {};
+
+        if (setSelectedVerseIndex) setSelectedVerseIndex(pI);
+        setCurrentSlide(updatedLive);
+        setNextSlide(updatedNext);
+        setMediaPage(0);
+        setIsLive(true);
+        setIsBlack(false);
+        setIsBlank(false);
+
+        broadcastToPresentation({
+          ...updatedLive,
+          nextSlideTitle: nextV ? nextV.ref || "" : "",
+          nextSlideContent: nextV ? nextV.text || "" : "",
+          isLive: true,
+          isBlack: false,
+          isBlank: false,
+        });
+      }
     }
   };
 

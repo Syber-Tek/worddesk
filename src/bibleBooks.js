@@ -91,6 +91,74 @@ const TWI_CODES = new Set(['TWI', 'ASNA', 'AKUA', 'TWIDC', 'TWIRV'])
 
 export const isTwiCode = (code) => TWI_CODES.has(String(code || '').toUpperCase())
 
+export function extractTranslationFromRef(text) {
+  if (!text || typeof text !== 'string') return null;
+  const match = text.match(/\(([A-Za-z0-9_\-\s]+)\)\s*$/);
+  if (match) {
+    const raw = match[1].trim();
+    if (raw.includes('/')) {
+      const parts = raw.split('/').map((p) => p.trim());
+      return parts[0] || null;
+    }
+    return raw;
+  }
+  return null;
+}
+
+export function detectLanguageFromBook(bookName) {
+  if (!bookName || typeof bookName !== 'string') return null;
+  const n = normalizeBookName(bookName);
+  for (const b of CANONICAL_BIBLE) {
+    if (normalizeBookName(b.tw) === n && normalizeBookName(b.en) !== n) {
+      return 'Twi';
+    }
+  }
+  return null;
+}
+
+export function matchBibleTranslation(biblesList, targetTranslation) {
+  if (!Array.isArray(biblesList) || biblesList.length === 0) return null;
+  const target = String(targetTranslation || '').trim().toUpperCase();
+  if (!target) return biblesList[0] || null;
+
+  // 1. Direct exact code match (case-insensitive)
+  const exact = biblesList.find((b) => String(b.code || '').toUpperCase() === target);
+  if (exact) return exact;
+
+  // 2. Twi translation aliases
+  if (target === 'TWI' || target === 'ASNA' || target === 'TWIRV' || target === 'AKUA' || target === 'TWIDC') {
+    const twiMatch =
+      biblesList.find((b) => b.code === 'TWI') ||
+      biblesList.find((b) => b.code === 'TWIRV') ||
+      biblesList.find((b) => isTwiCode(b.code)) ||
+      biblesList.find((b) => String(b.language || '').toLowerCase() === 'twi');
+    if (twiMatch) return twiMatch;
+  }
+
+  // 3. Ewe translation aliases
+  if (target === 'EWE' || target.includes('EWE')) {
+    const eweMatch =
+      biblesList.find((b) => String(b.code || '').toUpperCase() === 'EWE') ||
+      biblesList.find((b) => String(b.language || '').toLowerCase() === 'ewe') ||
+      biblesList.find((b) => String(b.name || '').toLowerCase().includes('ewe'));
+    if (eweMatch) return eweMatch;
+  }
+
+  // 4. Language match (e.g. "Twi", "Ewe", "English")
+  const langMatch = biblesList.find(
+    (b) => String(b.language || '').toUpperCase() === target
+  );
+  if (langMatch) return langMatch;
+
+  // 5. Name match (e.g. contains "Agbenya La", "Twerɛ Kronkron", etc.)
+  const nameMatch = biblesList.find((b) =>
+    String(b.name || '').toUpperCase().includes(target)
+  );
+  if (nameMatch) return nameMatch;
+
+  return null;
+}
+
 // Normalized comparison helper so 'Nnwom Mu Dwom' === 'Nnwom_mu_dwom',
 // '1 Samuel' === 'Samuel I'-style names via index mapping, etc.
 export const normalizeBookName = (name) =>
