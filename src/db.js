@@ -401,14 +401,47 @@ export function importXmlBibleFile(filePath) {
       else if (fn.includes('niv')) xmlFileDef = XML_BIBLE_FILE_DEFS['EnglishNIVBible.xml']
       else if (fn.includes('kjv')) xmlFileDef = XML_BIBLE_FILE_DEFS['EnglishKJBible.xml']
     }
-    const isTwi = xmlFileDef ? xmlFileDef.twi : (fileName.toLowerCase().includes('twi') || content.toLowerCase().includes('twi'))
+    const headerSnippet = content.slice(0, 2048).toLowerCase()
+    const isExplicitEnglish = fileName.toLowerCase().includes('english') || (content.match(/translation=["']([^"']+)["']/i) || [])[1]?.toLowerCase().includes('english')
+    const isExplicitEwe = fileName.toLowerCase().includes('ewe') || (content.match(/translation=["']([^"']+)["']/i) || [])[1]?.toLowerCase().includes('ewe')
+    const isExplicitTwi = fileName.toLowerCase().includes('twi') || (content.match(/translation=["']([^"']+)["']/i) || [])[1]?.toLowerCase().includes('twi') || headerSnippet.includes('language="twi"') || headerSnippet.includes("language='twi'")
+    const isTwi = xmlFileDef ? xmlFileDef.twi : (isExplicitTwi && !isExplicitEnglish)
 
     const transMatch = content.match(/translation=["']([^"']+)["']/i) || content.match(/biblename=["']([^"']+)["']/i) || content.match(/<title>([^<]+)<\/title>/i)
     const xmlTitle = transMatch ? transMatch[1].trim() : fileName
 
-    const code = xmlFileDef ? xmlFileDef.code : fileName.toUpperCase().replace(/[^A-Z0-9]/g, '_')
-    const name = xmlFileDef ? xmlFileDef.name : (isTwi ? `${xmlTitle} (Twi)` : xmlTitle)
-    const language = xmlFileDef && xmlFileDef.language ? xmlFileDef.language : (isTwi ? 'Twi' : 'English')
+    let code = xmlFileDef ? xmlFileDef.code : null
+    if (!code) {
+      const titleCodeMatch = xmlTitle.match(/\(([A-Za-z0-9]{2,6})\)/) || xmlTitle.match(/(?:English|Twi|Ewe)\s+([A-Za-z0-9]{2,6})\b/i)
+      const fnCodeMatch = fileName.match(/^(?:English|Twi|Ewe)?([A-Za-z0-9]{2,6})(?:Bible)?$/i)
+      if (titleCodeMatch) {
+        code = titleCodeMatch[1].toUpperCase()
+      } else if (fnCodeMatch) {
+        code = fnCodeMatch[1].toUpperCase()
+      } else {
+        code = fileName.toUpperCase().replace(/[^A-Z0-9]/g, '_')
+      }
+    }
+
+    // Clean up any previously mis-imported legacy code for this file if code changed
+    const legacyCode = fileName.toUpperCase().replace(/[^A-Z0-9]/g, '_')
+    if (code !== legacyCode) {
+      const oldBible = db.prepare('SELECT id FROM bibles WHERE code = ?').get(legacyCode)
+      if (oldBible) {
+        db.prepare('DELETE FROM verses WHERE book_id IN (SELECT id FROM books WHERE bible_id = ?)').run(oldBible.id)
+        db.prepare('DELETE FROM books WHERE bible_id = ?').run(oldBible.id)
+        db.prepare('DELETE FROM bibles WHERE id = ?').run(oldBible.id)
+      }
+    }
+    const name = xmlFileDef ? xmlFileDef.name : (isTwi && !xmlTitle.toLowerCase().includes('twi') ? `${xmlTitle} (Twi)` : xmlTitle)
+    let language = 'English'
+    if (xmlFileDef && xmlFileDef.language) {
+      language = xmlFileDef.language
+    } else if (isExplicitEwe) {
+      language = 'Ewe'
+    } else if (isTwi) {
+      language = 'Twi'
+    }
 
     let bible = db.prepare('SELECT id FROM bibles WHERE code = ?').get(code)
     if (!bible) {
@@ -846,7 +879,7 @@ export function getBibleStats() {
 
 export function removeBible(bibleId) {
   if (!db) return { success: false, error: 'DB not ready' }
-  const bible = db.prepare('SELECT id, code FROM bibles WHERE id = ?').get(bibleId)
+  const bible = db.prepare('SELECT id, code, source_file FROM bibles WHERE id = ?').get(bibleId)
   if (!bible) return { success: false, error: 'Bible not found' }
   if (bible.code.toUpperCase() === 'NIV' || bible.code.toUpperCase() === 'NKJV' || bible.code.toUpperCase() === 'KJV' || bible.code.toUpperCase() === 'TWI') {
     return { success: false, error: 'This is a default bundled Bible and cannot be deleted' }
@@ -856,6 +889,12 @@ export function removeBible(bibleId) {
       db.prepare('DELETE FROM books WHERE bible_id = ?').run(bible.id)
       db.prepare('DELETE FROM bibles WHERE id = ?').run(bible.id)
     })()
+    if (bible.source_file) {
+      const userFile = path.join(userDataDir('bibles'), 'xml', path.basename(bible.source_file))
+      if (fs.existsSync(userFile)) {
+        try { fs.unlinkSync(userFile) } catch {}
+      }
+    }
     return { success: true }
   } catch (err) {
     return { success: false, error: err.message }

@@ -339,8 +339,21 @@ ipcMain.handle('import-bible-xml-dialog', async () => {
   }
 
   const results = [];
+  const userXmlDir = path.join(app.getPath('userData'), 'bibles', 'xml');
+  if (!fs.existsSync(userXmlDir)) {
+    fs.mkdirSync(userXmlDir, { recursive: true });
+  }
   for (const filePath of filePaths) {
-    const result = importXmlBibleFile(filePath);
+    const targetFile = path.join(userXmlDir, path.basename(filePath));
+    if (path.resolve(filePath) !== path.resolve(targetFile)) {
+      try {
+        fs.copyFileSync(filePath, targetFile);
+      } catch (copyErr) {
+        console.warn('Could not copy file to user bibles folder:', copyErr);
+      }
+    }
+    const finalPath = fs.existsSync(targetFile) ? targetFile : filePath;
+    const result = importXmlBibleFile(finalPath);
     results.push({
       success: result.success,
       fileName: path.basename(filePath),
