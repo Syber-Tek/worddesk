@@ -177,4 +177,5 @@ jobs:
       - name: Trigger Website Live Revalidation
         continue-on-error: true
         run: |
+          curl -s -X POST "https://worddesk.vercel.app/api/revalidate?secret=${{ secrets.REVALIDATE_SECRET }}" || true
           curl -s -X POST "https://worddesk.org/api/revalidate?secret=${{ secrets.REVALIDATE_SECRET }}" || true
